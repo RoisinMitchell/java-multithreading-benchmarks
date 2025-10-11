@@ -4,17 +4,41 @@ import com.roisinmitchell.benchmarks.tasks.MatrixMultiplicationTask;
 
 public class Main {
     public static void main(String[] args) {
-        int matrixSize = 400;
-        int[] threadCounts = {1, 2, 4, 8, 12, 24};
-        int warmupRuns = 1;
-        int measuredRuns = 3;
+        int matrixSize = 1000; // Increase for longer runs (e.g. 1000 or 2000)
+        int warmupRuns = 3;
+        int measuredRuns = 4;
 
-        BenchmarkTask task = new MatrixMultiplicationTask(matrixSize);
-        BenchmarkRunner runner = new BenchmarkRunner();
+        // Internal algorithm parallelism levels
+        int[] parallelismLevels = {1, 4, 8, 16, 32, 64, 128};
 
-        runner.runAll(task, threadCounts, warmupRuns, measuredRuns);
+        // Hardware core configurations (these control where threads are pinned)
+        int[][] coreConfigs = {
+                {0},
+                {0, 1},
+                {0, 1, 2},
+                {0, 1, 2, 3},
+                {0, 1, 2, 3, 4}
+        };
 
-        System.out.println("--------------------------------------------------");
-        System.out.println("Benchmark complete.");
+        for (int[] cores : coreConfigs) {
+            System.out.println("\n==============================");
+            System.out.print("Running on cores: ");
+            for (int c : cores) System.out.print(c + " ");
+            System.out.println("\n==============================");
+
+            // Pin the outer runner thread(s)
+            BenchmarkRunner runner = new BenchmarkRunner(cores);
+
+            for (int parallelism : parallelismLevels) {
+                // ✅ Pass cores into the task so inner threads are pinned properly
+                BenchmarkTask task = new MatrixMultiplicationTask(matrixSize, parallelism, cores);
+
+                // Run with one outer thread — internal threads handle parallelism
+                runner.runAll(task, new int[]{1}, warmupRuns, measuredRuns);
+            }
+        }
+
+        System.out.println("\n--------------------------------------------------");
+        System.out.println("Experiment complete.");
     }
 }
