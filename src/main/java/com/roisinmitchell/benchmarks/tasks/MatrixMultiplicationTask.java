@@ -1,119 +1,91 @@
 package com.roisinmitchell.benchmarks.tasks;
 
 import com.roisinmitchell.benchmarks.BenchmarkTask;
+import com.roisinmitchell.benchmarks.utils.CpuAffinityWindows;
 
-/**
- * A CPU-bound benchmark task that performs dense matrix multiplication
- * on randomly generated square matrices of configurable size.
- * <p>
- * This workload is designed to stress the CPU’s floating-point units
- * and demonstrate the effects of multithreading, core utilization,
- * and oversubscription on real hardware.
- * </p>
- *
- * <p>
- * The result of the computation is reduced to a single value
- * ({@code c[0][0]}) to prevent the JVM from optimizing away
- * the matrix multiplication as dead code.
- * </p>
- *
- * <p><b>Benchmark characteristics:</b></p>
- * <ul>
- *   <li>CPU-bound workload (no I/O)</li>
- *   <li>Scales with matrix size and thread count</li>
- *   <li>Demonstrates cache pressure and CPU core contention</li>
- * </ul>
- *
- * <p><b>Example:</b></p>
- * <pre>{@code
- * BenchmarkTask task = new MatrixMultiplicationTask(400);
- * runner.runAll(task, new int[]{1, 2, 4, 8, 12}, 1, 3);
- * }</pre>
- *
- * @author Roisin Mitchell
- * @version 1.0
- * @since JDK 21
- */
 public class MatrixMultiplicationTask extends BenchmarkTask {
-
-    /** The size of the square matrices (e.g., 400 = 400x400). */
     private final int size;
+    private final int parallelism;
+    private final int[] coreList;
 
-    /**
-     * Constructs a new matrix multiplication benchmark with the given size.
-     *
-     * @param size the dimension of the matrices to multiply
-     */
-    public MatrixMultiplicationTask(int size) {
+    private final double[][] firstMatrix;
+    private final double[][] secondMatrix;
+
+    public MatrixMultiplicationTask(int size, int parallelism, int[] coreList) {
         this.size = size;
+        this.parallelism = parallelism;
+        this.coreList = coreList;
+
+        System.out.println("Generating matrices (" + size + "x" + size + ")...");
+        this.firstMatrix = randomMatrix(size);
+        this.secondMatrix = randomMatrix(size);
     }
 
-    /**
-     * Executes the matrix multiplication benchmark.
-     * <p>
-     * Generates two random matrices, multiplies them,
-     * and returns a derived value to prevent JIT elimination.
-     * </p>
-     *
-     * @return a numeric result from the output matrix to ensure computation validity
-     */
+    public MatrixMultiplicationTask(int size, int parallelism) {
+        this(size, parallelism, null);
+    }
+
     @Override
     public Long call() {
-        double[][] a = randomMatrix(size);
-        double[][] b = randomMatrix(size);
-        double[][] c = multiply(a, b);
-
-        // Return a value so that the JIT compiler cannot optimize away unused work
-        return (long) c[0][0];
+        double[][] result = multiplyManualParallel(firstMatrix, secondMatrix);
+        return (long) result[0][0]; // prevent JIT optimization
     }
 
-    /**
-     * Returns a descriptive name for this benchmark, including matrix size.
-     *
-     * @return the name of the benchmark task (e.g. "Matrix Multiplication (400x400)")
-     */
     @Override
     public String getName() {
-        return "Matrix Multiplication (" + size + "x" + size + ")";
+        return "Matrix Multiplication (" + size + "x" + size + ") [Manual " + parallelism + " threads]";
     }
 
-    /**
-     * Multiplies two dense square matrices using the classic O(n³) algorithm.
-     * <p>
-     * This method intentionally uses a simple, naive algorithm to maximize
-     * CPU workload and make scaling effects visible during benchmarking.
-     * </p>
-     *
-     * @param firstMatrix  the left-hand matrix (A)
-     * @param secondMatrix the right-hand matrix (B)
-     * @return the resulting matrix (A × B)
-     */
-    private double[][] multiply(double[][] firstMatrix, double[][] secondMatrix) {
-        int rows = firstMatrix.length;
-        int cols = secondMatrix[0].length;
-        int common = secondMatrix.length;
+    private double[][] multiplyManualParallel(double[][] a, double[][] b) {
+        int rows = a.length;
+        int cols = b[0].length;
+        int common = b.length;
+        double[][] result = new double[rows][cols];
 
-        double[][] resultMatrix = new double[rows][cols];
+        Thread[] threads = new Thread[parallelism];
+        int rowsPerThread = (int) Math.ceil(rows / (double) parallelism);
 
-        for (int i = 0; i < rows; i++) {
-            for (int j = 0; j < cols; j++) {
-                double sum = 0;
-                for (int k = 0; k < common; k++) {
-                    sum += firstMatrix[i][k] * secondMatrix[k][j];
+        for (int t = 0; t < parallelism; t++) {
+            final int threadId = t;
+            final int startRow = t * rowsPerThread;
+            final int endRow = Math.min(rows, startRow + rowsPerThread);
+
+            threads[t] = new Thread(() -> {
+                if (coreList != null && coreList.length > 0) {
+                    int core = coreList[threadId % coreList.length];
+                    try {
+                        CpuAffinityWindows.setCurrentThreadAffinity(core);
+                    } catch (Exception e) {
+                        System.out.println("Affinity failed for thread " + threadId + ": " + e.getMessage());
+                    }
                 }
-                resultMatrix[i][j] = sum;
+
+                for (int i = startRow; i < endRow; i++) {
+                    double[] row = a[i];
+                    double[] resRow = result[i];
+                    for (int j = 0; j < cols; j++) {
+                        double sum = 0;
+                        for (int k = 0; k < common; k++) {
+                            sum += row[k] * b[k][j];
+                        }
+                        resRow[j] = sum;
+                    }
+                }
+            }, "MatMul-" + t);
+            threads[t].start();
+        }
+
+        for (Thread t : threads) {
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
 
-        return resultMatrix;
+        return result;
     }
 
-    /**
-     * Generates a random square matrix filled with double-precision values.
-     *
-     * @param size the matrix dimension
-     * @return a randomly populated square matrix
-     */
     private double[][] randomMatrix(int size) {
         double[][] matrix = new double[size][size];
         for (int i = 0; i < size; i++) {
