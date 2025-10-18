@@ -6,26 +6,33 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 
+/**
+ * Runs benchmark tasks with configurable thread and core settings.
+ */
 public class BenchmarkRunner {
 
     private final Integer fixedCore;
     private final int[] coreList;
 
+    /** Default constructor (no fixed core). */
     public BenchmarkRunner() {
         this.fixedCore = null;
         this.coreList = null;
     }
 
+    /** Runs all threads on a single fixed core. */
     public BenchmarkRunner(int fixedCore) {
         this.fixedCore = fixedCore;
         this.coreList = null;
     }
 
+    /** Uses a custom list of cores for affinity. */
     public BenchmarkRunner(int[] coreList) {
         this.fixedCore = null;
         this.coreList = coreList;
     }
 
+    /** Runs a task for multiple thread counts and prints average times. */
     public void runAll(BenchmarkTask task, int[] threadCounts, int warmupRuns, int measuredRuns) {
         System.out.println("=== Running " + task.getName() + " ===");
 
@@ -39,6 +46,7 @@ public class BenchmarkRunner {
         }
     }
 
+    /** Runs warm-up and measured benchmark runs, returning the average time. */
     public long runBenchmark(BenchmarkTask task, int threads, int warmupRuns, int measuredRuns) throws Exception {
         for (int i = 0; i < warmupRuns; i++) {
             runOnce(task, threads, false);
@@ -52,6 +60,7 @@ public class BenchmarkRunner {
         return (long) times.stream().mapToLong(Long::longValue).average().orElse(0);
     }
 
+    /** Runs the benchmark once using a fixed thread pool. */
     private long runOnce(BenchmarkTask task, int threads, boolean print) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         List<Future<Long>> results = new ArrayList<>();
@@ -65,7 +74,6 @@ public class BenchmarkRunner {
                 try {
                     CpuAffinityWindows.setCurrentThreadAffinity(coreId);
                 } catch (Exception ignored) {}
-
                 return task.call();
             }));
         }
@@ -83,6 +91,7 @@ public class BenchmarkRunner {
         return duration;
     }
 
+    /** Chooses which CPU core a thread should run on. */
     private int selectCore(int threadId) {
         int available = Runtime.getRuntime().availableProcessors();
 

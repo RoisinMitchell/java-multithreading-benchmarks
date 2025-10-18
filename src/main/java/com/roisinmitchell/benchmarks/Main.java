@@ -1,44 +1,36 @@
 package com.roisinmitchell.benchmarks;
 
-import com.roisinmitchell.benchmarks.tasks.MatrixMultiplicationTask;
+import com.roisinmitchell.benchmarks.utils.BenchmarkLogger;
 
 public class Main {
     public static void main(String[] args) {
-        int matrixSize = 1000; // Increase for longer runs (e.g. 1000 or 2000)
+        int matrixSize = 1400;
         int warmupRuns = 3;
-        int measuredRuns = 4;
+        int measuredRuns = 3;
 
-        // Internal algorithm parallelism levels
-        int[] parallelismLevels = {1, 4, 8, 16, 32, 64, 128};
-
-        // Hardware core configurations (these control where threads are pinned)
+        int[] parallelismLevels = {1, 2, 4, 8, 16, 32, 64, 128, 256};
         int[][] coreConfigs = {
-                {0},
-                {0, 1},
-                {0, 1, 2},
-                {0, 1, 2, 3},
-                {0, 1, 2, 3, 4}
+                {0}
+//                {0, 1},
+//                {0, 1, 2},
+//                {0, 1, 2, 3},
+//                {0, 1, 2, 3, 4},
+//                {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
         };
 
-        for (int[] cores : coreConfigs) {
-            System.out.println("\n==============================");
-            System.out.print("Running on cores: ");
-            for (int c : cores) System.out.print(c + " ");
-            System.out.println("\n==============================");
+        try (BenchmarkLogger logger = new BenchmarkLogger("matrix_results")) {
+            BenchmarkExperiment experiment = new BenchmarkExperiment(
+                    matrixSize,
+                    parallelismLevels,
+                    coreConfigs,
+                    warmupRuns,
+                    measuredRuns,
+                    logger
+            );
 
-            // Pin the outer runner thread(s)
-            BenchmarkRunner runner = new BenchmarkRunner(cores);
-
-            for (int parallelism : parallelismLevels) {
-                // ✅ Pass cores into the task so inner threads are pinned properly
-                BenchmarkTask task = new MatrixMultiplicationTask(matrixSize, parallelism, cores);
-
-                // Run with one outer thread — internal threads handle parallelism
-                runner.runAll(task, new int[]{1}, warmupRuns, measuredRuns);
-            }
+            experiment.runAll();
+        } catch (Exception e) {
+            System.err.println("Benchmark failed: " + e.getMessage());
         }
-
-        System.out.println("\n--------------------------------------------------");
-        System.out.println("Experiment complete.");
     }
 }

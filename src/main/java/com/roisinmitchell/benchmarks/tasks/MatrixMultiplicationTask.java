@@ -33,14 +33,14 @@ public class MatrixMultiplicationTask extends BenchmarkTask {
 
     @Override
     public String getName() {
-        return "Matrix Multiplication (" + size + "x" + size + ") [Manual " + parallelism + " threads]";
+        return "Matrix Multiplication (" + size + "x" + size + ") [" + parallelism + " threads]";
     }
 
-    private double[][] multiplyManualParallel(double[][] a, double[][] b) {
-        int rows = a.length;
-        int cols = b[0].length;
-        int common = b.length;
-        double[][] result = new double[rows][cols];
+    private double[][] multiplyManualParallel(double[][] firstMatrix, double[][] secondMatrix) {
+        int rows = firstMatrix.length;
+        int cols = secondMatrix[0].length;
+        int common = secondMatrix.length;
+        double[][] resultMatrix = new double[rows][cols];
 
         Thread[] threads = new Thread[parallelism];
         int rowsPerThread = (int) Math.ceil(rows / (double) parallelism);
@@ -61,12 +61,12 @@ public class MatrixMultiplicationTask extends BenchmarkTask {
                 }
 
                 for (int i = startRow; i < endRow; i++) {
-                    double[] row = a[i];
-                    double[] resRow = result[i];
+                    double[] row = firstMatrix[i];
+                    double[] resRow = resultMatrix[i];
                     for (int j = 0; j < cols; j++) {
                         double sum = 0;
                         for (int k = 0; k < common; k++) {
-                            sum += row[k] * b[k][j];
+                            sum += row[k] * secondMatrix[k][j];
                         }
                         resRow[j] = sum;
                     }
@@ -83,7 +83,7 @@ public class MatrixMultiplicationTask extends BenchmarkTask {
             }
         }
 
-        return result;
+        return resultMatrix;
     }
 
     private double[][] randomMatrix(int size) {
